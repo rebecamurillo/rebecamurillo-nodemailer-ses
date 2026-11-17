@@ -30,5 +30,7 @@ functions:
       - http:
           path: message
           method: post
-          cors:
-            origin: ${param:ALLOWED_ORIGIN}
+      # Preflight is answered by the function so it can match ALLOWED_ORIGIN's list
+      - http:
+          path: message
+          method: options

@@ -5,7 +5,11 @@ const AWS_REGION_SES = process.env.AWS_REGION_SES;
 const DEFAULT_FROM_EMAIL = process.env.DEFAULT_FROM_EMAIL;
 const DEFAULT_TO_EMAIL = process.env.DEFAULT_TO_EMAIL;
 const CAPTCHA_SECRET_KEY = process.env.CAPTCHA_SECRET_KEY;
-const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN;
+// Comma-separated list, e.g. "https://rebecamurillo.com,https://rebeca.murillo.link"
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGIN || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 AWS.config.update({ region: AWS_REGION_SES });
 
@@ -17,7 +21,18 @@ const transporter = nodemailer.createTransport({
 exports.handler = async (event) => {
   console.log("event: ", event);
 
-  const { recaptchaResponse, to, from, subject, text } = JSON.parse(event.body);
+  const headers = event.headers || {};
+  const origin = headers.origin || headers.Origin;
+  const response = (statusCode, body) => buildResponse(statusCode, body, origin);
+
+  // CORS preflight
+  if (event.httpMethod === "OPTIONS") {
+    return response(204);
+  }
+
+  const { recaptchaResponse, to, from, subject, text } = JSON.parse(
+    event.body || "{}"
+  );
 
   // Step 1: Validate the reCAPTCHA response
   const captchaValidationResult = await validateCaptcha(recaptchaResponse);
@@ -48,13 +63,20 @@ exports.handler = async (event) => {
   return response(200, { message: "Email sent successfully" });
 };
 
-function response(statusCode, body) {
+function buildResponse(statusCode, body, origin) {
+  // Echo the caller's origin only when it is in the allowed list
+  const allowOrigin = ALLOWED_ORIGINS.includes(origin)
+    ? origin
+    : ALLOWED_ORIGINS[0];
   return {
     statusCode,
     headers: {
-      "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
+      "Access-Control-Allow-Origin": allowOrigin,
+      "Access-Control-Allow-Methods": "OPTIONS,POST",
+      "Access-Control-Allow-Headers": "Content-Type",
+      Vary: "Origin",
     },
-    body: JSON.stringify(body),
+    body: body === undefined ? "" : JSON.stringify(body),
   };
 }
 
